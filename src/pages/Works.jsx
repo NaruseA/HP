@@ -6,7 +6,6 @@ export default function Works() {
   return (
     <div>
       <h2 className="works-title">作品集</h2>
-      <p>テストです。</p>
       <div className="works-grid">
         {dummyImages.map((src, i) => (
           <div className="work-item" key={i}>
