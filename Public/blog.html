@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta charset="UTF-8">
+  <title>Blog</title>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <nav id="sidebar"></nav>
+
+    <main class="content">
+      <h1>Blog</h1>
+      <div id="posts">記事を読み込み中...</div>
+      <section id="post-container"></section>
+    </main>
+  </div>
+
+  <!-- サイドバー読み込み -->
+  <script src="../js/loadSidebar.js"></script>
+
+  <!-- Notionから記事取得 -->
+  <script src="../js/fetchNotion.js"></script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+}
+
+.layout {
+  display: flex;
+}
+
+/* サイドバー */
+#sidebar {
+  width: 200px;
+  min-height: 100vh;
+  background: #f0f0f0;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+/* サイドバーリンク */
+#sidebar ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+#sidebar ul li {
+  margin-bottom: 10px;
+}
+
+#sidebar ul li a {
+  text-decoration: none;
+  color: #333;
+  display: block;
+  padding: 5px 10px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+/* ホバー・クリック */
+#sidebar ul li a:hover {
+  background: #e0e0e0; /* ホバー5%グレー */
+}
+#sidebar ul li a:active {
+  background: #cccccc; /* クリック10%グレー */
+}
+
+/* 現在ページアクティブ */
+#sidebar ul li a.active {
+  background: #333;
+  color: #fff;
+}
+
+/* メインコンテンツ */
+main.content {
+  flex: 1;
+  padding: 20px;
+}
