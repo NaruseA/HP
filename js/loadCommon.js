@@ -7,3 +7,5 @@ fetch('common/sidebar.html')
     activateCurrentLink(); 
   })
   .catch(err => console.error('サイドバー読み込み失敗:', err));
+
+  
