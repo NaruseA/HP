@@ -1,4 +1,4 @@
-fetch('common/sidebar.html')
+fetch('/common/sidebar.html')
   .then(response => response.text())
   .then(html => {
     const sidebar = document.getElementById('sidebar');
