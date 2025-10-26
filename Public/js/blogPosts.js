@@ -2,16 +2,16 @@ const postsContainer = document.getElementById('blog-posts');
 const postsEmptyMessage = document.getElementById('blog-empty');
 const tagList = document.getElementById('blog-tags');
 const tagEmptyMessage = document.getElementById('tag-empty');
+const postsErrorMessage = document.getElementById('blog-error');
+const tagErrorMessage = document.getElementById('tag-error');
 
 if (postsContainer) {
   loadBlogContent().catch((error) => {
     console.error('ブログ記事の読み込みに失敗しました:', error);
-    if (postsEmptyMessage) {
-      postsEmptyMessage.style.display = 'block';
-    }
-    if (tagEmptyMessage) {
-      tagEmptyMessage.style.display = 'block';
-    }
+    hide(postsEmptyMessage);
+    hide(tagEmptyMessage);
+    show(postsErrorMessage);
+    show(tagErrorMessage);
   });
 }
 
@@ -22,6 +22,8 @@ async function loadBlogContent() {
   }
 
   const posts = await response.json();
+  hide(postsErrorMessage);
+  hide(tagErrorMessage);
   renderPosts(posts);
   renderTags(posts);
 }
@@ -30,17 +32,19 @@ function renderPosts(posts) {
   postsContainer.innerHTML = '';
 
   if (!Array.isArray(posts) || posts.length === 0) {
-    if (postsEmptyMessage) {
-      postsEmptyMessage.style.display = 'block';
-    }
+    show(postsEmptyMessage);
     return;
   }
 
-  if (postsEmptyMessage) {
-    postsEmptyMessage.style.display = 'none';
-  }
+  hide(postsEmptyMessage);
 
-  posts.forEach((post) => {
+  const sortedPosts = [...posts].sort((a, b) => {
+    const timeA = Date.parse(a?.lastEdited ?? a?.createdAt ?? 0) || 0;
+    const timeB = Date.parse(b?.lastEdited ?? b?.createdAt ?? 0) || 0;
+    return timeB - timeA;
+  });
+
+  sortedPosts.forEach((post) => {
     const article = document.createElement('article');
     article.className = 'blog-card';
 
@@ -82,15 +86,11 @@ function renderTags(posts) {
   });
 
   if (uniqueTags.size === 0) {
-    if (tagEmptyMessage) {
-      tagEmptyMessage.style.display = 'block';
-    }
+    show(tagEmptyMessage);
     return;
   }
 
-  if (tagEmptyMessage) {
-    tagEmptyMessage.style.display = 'none';
-  }
+  hide(tagEmptyMessage);
 
   uniqueTags.forEach((tag) => {
     const item = document.createElement('li');
@@ -104,4 +104,18 @@ function truncateText(text, maxLength) {
     return text;
   }
   return `${text.slice(0, maxLength)}...`;
+}
+
+function show(element) {
+  if (!element) {
+    return;
+  }
+  element.style.display = 'block';
+}
+
+function hide(element) {
+  if (!element) {
+    return;
+  }
+  element.style.display = 'none';
 }
