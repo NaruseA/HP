@@ -29,18 +29,77 @@ export default async function handler(req, res) {
     const data = await response.json();
     const results = Array.isArray(data?.results) ? data.results : [];
 
-    const posts = results.map((page) => ({
-      id: page.id,
-      title: page?.properties?.Title?.title?.[0]?.plain_text || "Untitled",
-      tags:
-        page?.properties?.Tag?.multi_select?.map((tag) => tag.name) || [],
-      content: page?.properties?.Content?.rich_text?.[0]?.plain_text || "",
-    }));
+    const posts = results.map((page) => {
+      const properties = page?.properties || {};
+
+      const titleProperty = findPropertyByType(properties, "title", [
+        "Title",
+        "名前",
+        "Name",
+        "タイトル",
+      ]);
+      const contentProperty = findPropertyByType(properties, "rich_text", [
+        "Content",
+        "本文",
+        "Description",
+        "内容",
+      ]);
+      const tagProperty =
+        findPropertyByType(properties, "multi_select", [
+          "Tag",
+          "タグ",
+          "Tags",
+          "カテゴリー",
+          "Categories",
+        ]) || findPropertyByType(properties, "select");
+
+      return {
+        id: page.id,
+        title: extractPlainText(titleProperty?.title).trim() || "Untitled",
+        tags: extractTags(tagProperty),
+        content: extractPlainText(contentProperty?.rich_text).trim(),
+      };
+    });
 
     res.status(200).json(posts);
   } catch (error) {
     console.error("Notion API error:", error);
     res.status(500).json({ error: "Failed to fetch from Notion" });
   }
+}
+
+function findPropertyByType(properties, type, preferredNames = []) {
+  for (const name of preferredNames) {
+    const property = properties?.[name];
+    if (property?.type === type) {
+      return property;
+    }
+  }
+
+  return Object.values(properties || {}).find((property) => property?.type === type);
+}
+
+function extractPlainText(richTextArray) {
+  if (!Array.isArray(richTextArray)) {
+    return "";
+  }
+
+  return richTextArray.map((text) => text?.plain_text || "").join("");
+}
+
+function extractTags(property) {
+  if (!property) {
+    return [];
+  }
+
+  if (property.type === "multi_select" && Array.isArray(property.multi_select)) {
+    return property.multi_select.map((tag) => tag?.name).filter(Boolean);
+  }
+
+  if (property.type === "select" && property.select?.name) {
+    return [property.select.name];
+  }
+
+  return [];
 }
 
