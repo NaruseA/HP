@@ -17,38 +17,19 @@
 
       <section class="page-section">
         <h2>最新の記事</h2>
-        <div class="card-grid blog-grid">
-          <article class="blog-card">
-            <h3>コミッションワークの進め方</h3>
-            <p>ヒアリングからラフ制作、納品までのフローと、クライアントとのコミュニケーションで大切にしているポイントをまとめました。</p>
-            <p class="blog-meta">2024.02.10 / Illustration</p>
-          </article>
-          <article class="blog-card">
-            <h3>イベント出展振り返り</h3>
-            <p>Design Festaに初めて出展した際の準備や当日の様子、人気だったアイテムなどをフォトレポート形式で紹介します。</p>
-            <p class="blog-meta">2024.01.30 / Report</p>
-          </article>
-          <article class="blog-card">
-            <h3>お気に入りの配色ツール</h3>
-            <p>日々の制作で役立っているカラーパレット生成ツールを3つピックアップし、それぞれの使いどころをレビューしました。</p>
-            <p class="blog-meta">2024.01.18 / Tools</p>
-          </article>
-        </div>
+        <div class="card-grid blog-grid" id="blog-posts"></div>
+        <p id="blog-empty" class="empty-message" style="display:none;">Notionから記事を取得できませんでした。</p>
       </section>
 
       <section class="page-section">
         <h2>カテゴリー</h2>
-        <ul class="tag-list">
-          <li>#Illustration</li>
-          <li>#GraphicDesign</li>
-          <li>#Goods</li>
-          <li>#Event</li>
-          <li>#Tools</li>
-        </ul>
+        <ul class="tag-list" id="blog-tags"></ul>
+        <p id="tag-empty" class="empty-message" style="display:none;">まだタグが登録されていません。</p>
       </section>
     </main>
   </div>
 
   <script src="js/loadSidebar.js"></script>
+  <script type="module" src="js/blogPosts.js"></script>
 </body>
 </html>

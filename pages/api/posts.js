@@ -29,13 +29,25 @@ export default async function handler(req, res) {
     const data = await response.json();
     const results = Array.isArray(data?.results) ? data.results : [];
 
-    const posts = results.map((page) => ({
-      id: page.id,
-      title: page?.properties?.Title?.title?.[0]?.plain_text || "Untitled",
-      tags:
-        page?.properties?.Tag?.multi_select?.map((tag) => tag.name) || [],
-      content: page?.properties?.Content?.rich_text?.[0]?.plain_text || "",
-    }));
+    const posts = results.map((page) => {
+      const titleFragments = Array.isArray(page?.properties?.Title?.title)
+        ? page.properties.Title.title
+        : [];
+      const richText = Array.isArray(page?.properties?.Content?.rich_text)
+        ? page.properties.Content.rich_text
+        : [];
+      const tags = Array.isArray(page?.properties?.Tag?.multi_select)
+        ? page.properties.Tag.multi_select
+        : [];
+
+      return {
+        id: page.id,
+        title:
+          titleFragments.map((text) => text?.plain_text || "").join("").trim() || "Untitled",
+        tags: tags.map((tag) => tag?.name).filter(Boolean),
+        content: richText.map((text) => text?.plain_text || "").join("").trim(),
+      };
+    });
 
     res.status(200).json(posts);
   } catch (error) {
