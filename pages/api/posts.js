@@ -59,16 +59,44 @@ export default async function handler(req, res) {
 
   try {
     const pages = await fetchAllPages({ databaseId, notionToken });
-    const posts = pages
-      .map((page) => mapPageToPost(page))
-      .filter(Boolean)
-      .sort((a, b) => {
-        const timeA = Date.parse(a?.lastEdited ?? a?.createdAt ?? 0) || 0;
-        const timeB = Date.parse(b?.lastEdited ?? b?.createdAt ?? 0) || 0;
-        return timeB - timeA;
-      });
 
-    res.status(200).json(posts);
+    const posts = [];
+    const postsMissingContent = [];
+
+    for (const page of pages) {
+      const post = mapPageToPost(page);
+      if (!post) {
+        continue;
+      }
+
+      if (!post.content) {
+        postsMissingContent.push(post);
+      }
+
+      posts.push(post);
+    }
+
+    if (postsMissingContent.length > 0) {
+      const excerpts = await Promise.allSettled(
+        postsMissingContent.map((post) =>
+          fetchPageExcerpt({ pageId: post.id, notionToken })
+        )
+      );
+
+      excerpts.forEach((result, index) => {
+        if (result.status === "fulfilled" && result.value) {
+          postsMissingContent[index].content = result.value;
+        }
+      });
+    }
+
+    const sortedPosts = posts.sort((a, b) => {
+      const timeA = Date.parse(a?.lastEdited ?? a?.createdAt ?? 0) || 0;
+      const timeB = Date.parse(b?.lastEdited ?? b?.createdAt ?? 0) || 0;
+      return timeB - timeA;
+    });
+
+    res.status(200).json(sortedPosts);
   } catch (error) {
     console.error("Notion API error:", error);
     const statusCode = getStatusCode(error);
@@ -93,6 +121,7 @@ async function fetchAllPages({ databaseId, notionToken }) {
     const response = await notionRequest({
       path: `/v1/databases/${databaseId}/query`,
       token: notionToken,
+      method: "POST",
       body,
     });
 
@@ -107,20 +136,18 @@ async function fetchAllPages({ databaseId, notionToken }) {
   return pages;
 }
 
-function notionRequest({ path, token, body }) {
-  const payload = JSON.stringify(body ?? {});
+function notionRequest({ path, token, method = "GET", body }) {
+  const payload = body ? JSON.stringify(body) : undefined;
 
   return new Promise((resolve, reject) => {
     const request = https.request(
       {
         hostname: "api.notion.com",
         path,
-        method: "POST",
+        method,
         headers: {
           Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
           "Notion-Version": NOTION_VERSION,
-          "Content-Length": Buffer.byteLength(payload),
         },
       },
       (response) => {
@@ -149,13 +176,56 @@ function notionRequest({ path, token, body }) {
       }
     );
 
+    if (payload) {
+      request.setHeader("Content-Type", "application/json");
+      request.setHeader("Content-Length", Buffer.byteLength(payload));
+    }
+
     request.on("error", (error) => {
       reject(error);
     });
 
-    request.write(payload);
+    if (payload) {
+      request.write(payload);
+    }
     request.end();
   });
+}
+
+async function fetchPageExcerpt({ pageId, notionToken }) {
+  if (!pageId) {
+    return "";
+  }
+
+  const normalizedId = pageId.replace(/-/g, "");
+  let startCursor;
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const searchParams = new URLSearchParams({ page_size: "50" });
+    if (startCursor) {
+      searchParams.set("start_cursor", startCursor);
+    }
+
+    const response = await notionRequest({
+      path: `/v1/blocks/${normalizedId}/children?${searchParams.toString()}`,
+      token: notionToken,
+      method: "GET",
+    });
+
+    const blocks = Array.isArray(response?.results) ? response.results : [];
+    const text = extractPlainTextFromBlocks(blocks);
+    if (text) {
+      return text;
+    }
+
+    if (!response?.has_more || !response?.next_cursor) {
+      break;
+    }
+
+    startCursor = response.next_cursor;
+  }
+
+  return "";
 }
 
 function mapPageToPost(page) {
@@ -189,7 +259,7 @@ function mapPageToPost(page) {
   return {
     id: page.id,
     title,
-    content,
+    content: content || "",
     tags,
     url: page.url ?? undefined,
     createdAt: page.created_time ?? undefined,
@@ -216,12 +286,7 @@ function extractPlainTextFromProperty(property) {
   }
 
   if (property.type === "title" || property.type === "rich_text") {
-    const fragments = property[property.type];
-    if (!Array.isArray(fragments)) {
-      return "";
-    }
-
-    return fragments.map((fragment) => fragment?.plain_text || "").join("").trim();
+    return extractPlainTextFromRichText(property[property.type]);
   }
 
   if (property.type === "select") {
@@ -237,6 +302,42 @@ function extractPlainTextFromProperty(property) {
   }
 
   return "";
+}
+
+function extractPlainTextFromBlocks(blocks) {
+  if (!Array.isArray(blocks)) {
+    return "";
+  }
+
+  for (const block of blocks) {
+    if (!block || block.object !== "block") {
+      continue;
+    }
+
+    const type = block.type;
+    if (!type) {
+      continue;
+    }
+
+    const richText = block?.[type]?.rich_text;
+    const text = extractPlainTextFromRichText(richText);
+    if (text) {
+      return text;
+    }
+  }
+
+  return "";
+}
+
+function extractPlainTextFromRichText(fragments) {
+  if (!Array.isArray(fragments)) {
+    return "";
+  }
+
+  return fragments
+    .map((fragment) => fragment?.plain_text || "")
+    .join("")
+    .trim();
 }
 
 function extractTagsFromProperty(property) {
