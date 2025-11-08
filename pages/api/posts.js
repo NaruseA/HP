@@ -58,6 +58,11 @@ export default async function handler(req, res) {
   }
 
   try {
+    const requestedId = typeof req.query?.id === "string" ? req.query.id : undefined;
+    const normalizedRequestedId = requestedId
+      ? normalizePageId(requestedId)
+      : undefined;
+
     const pages = await fetchAllPages({ databaseId, notionToken });
 
     const posts = [];
@@ -79,7 +84,7 @@ export default async function handler(req, res) {
     if (postsMissingContent.length > 0) {
       const excerpts = await Promise.allSettled(
         postsMissingContent.map((post) =>
-          fetchPageExcerpt({ pageId: post.id, notionToken })
+          fetchPagePlainText({ pageId: post.id, notionToken })
         )
       );
 
@@ -95,6 +100,25 @@ export default async function handler(req, res) {
       const timeB = Date.parse(b?.lastEdited ?? b?.createdAt ?? 0) || 0;
       return timeB - timeA;
     });
+
+    if (normalizedRequestedId) {
+      const matchedPost = sortedPosts.find(
+        (post) => normalizePageId(post.id) === normalizedRequestedId
+      );
+
+      if (!matchedPost) {
+        return res.status(404).json({ error: "Post not found" });
+      }
+
+      if (!matchedPost.content) {
+        matchedPost.content = await fetchPagePlainText({
+          pageId: matchedPost.id,
+          notionToken,
+        });
+      }
+
+      return res.status(200).json(matchedPost);
+    }
 
     res.status(200).json(sortedPosts);
   } catch (error) {
@@ -192,33 +216,22 @@ function notionRequest({ path, token, method = "GET", body }) {
   });
 }
 
-async function fetchPageExcerpt({ pageId, notionToken }) {
+async function fetchPagePlainText({ pageId, notionToken }) {
   if (!pageId) {
     return "";
   }
 
-    const posts = results.map((page) => {
-      const titleFragments = Array.isArray(page?.properties?.Title?.title)
-        ? page.properties.Title.title
-        : [];
-      const richText = Array.isArray(page?.properties?.Content?.rich_text)
-        ? page.properties.Content.rich_text
-        : [];
-      const tags = Array.isArray(page?.properties?.Tag?.multi_select)
-        ? page.properties.Tag.multi_select
-        : [];
+  const normalizedId = normalizePageId(pageId);
+  if (!normalizedId) {
+    return "";
+  }
 
-      return {
-        id: page.id,
-        title:
-          titleFragments.map((text) => text?.plain_text || "").join("").trim() || "Untitled",
-        tags: tags.map((tag) => tag?.name).filter(Boolean),
-        content: richText.map((text) => text?.plain_text || "").join("").trim(),
-      };
-    });
+  const collectedText = [];
+  let startCursor;
+  let attempts = 0;
 
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    const searchParams = new URLSearchParams({ page_size: "50" });
+  while (attempts < 5) {
+    const searchParams = new URLSearchParams({ page_size: "100" });
     if (startCursor) {
       searchParams.set("start_cursor", startCursor);
     }
@@ -230,19 +243,18 @@ async function fetchPageExcerpt({ pageId, notionToken }) {
     });
 
     const blocks = Array.isArray(response?.results) ? response.results : [];
-    const text = extractPlainTextFromBlocks(blocks);
-    if (text) {
-      return text;
-    }
+    const textFragments = collectPlainTextFromBlocks(blocks);
+    collectedText.push(...textFragments);
 
     if (!response?.has_more || !response?.next_cursor) {
       break;
     }
 
     startCursor = response.next_cursor;
+    attempts += 1;
   }
 
-  return "";
+  return collectedText.join("\n\n").trim();
 }
 
 function mapPageToPost(page) {
@@ -272,12 +284,14 @@ function mapPageToPost(page) {
   const title = extractPlainTextFromProperty(titleProperty) || "Untitled";
   const content = extractPlainTextFromProperty(contentProperty);
   const tags = extractTagsFromProperty(tagProperty);
+  const coverUrl = extractCoverUrl(page.cover);
 
   return {
     id: page.id,
     title,
     content: content || "",
     tags,
+    coverUrl,
     url: page.url ?? undefined,
     createdAt: page.created_time ?? undefined,
     lastEdited: page.last_edited_time ?? undefined,
@@ -321,31 +335,6 @@ function extractPlainTextFromProperty(property) {
   return "";
 }
 
-function extractPlainTextFromBlocks(blocks) {
-  if (!Array.isArray(blocks)) {
-    return "";
-  }
-
-  for (const block of blocks) {
-    if (!block || block.object !== "block") {
-      continue;
-    }
-
-    const type = block.type;
-    if (!type) {
-      continue;
-    }
-
-    const richText = block?.[type]?.rich_text;
-    const text = extractPlainTextFromRichText(richText);
-    if (text) {
-      return text;
-    }
-  }
-
-  return "";
-}
-
 function extractPlainTextFromRichText(fragments) {
   if (!Array.isArray(fragments)) {
     return "";
@@ -355,6 +344,37 @@ function extractPlainTextFromRichText(fragments) {
     .map((fragment) => fragment?.plain_text || "")
     .join("")
     .trim();
+}
+
+function collectPlainTextFromBlocks(blocks) {
+  if (!Array.isArray(blocks)) {
+    return [];
+  }
+
+  const texts = [];
+
+  for (const block of blocks) {
+    const text = extractPlainTextFromBlock(block);
+    if (text) {
+      texts.push(text);
+    }
+  }
+
+  return texts;
+}
+
+function extractPlainTextFromBlock(block) {
+  if (!block || block.object !== "block") {
+    return "";
+  }
+
+  const type = block.type;
+  if (!type) {
+    return "";
+  }
+
+  const richText = block?.[type]?.rich_text;
+  return extractPlainTextFromRichText(richText);
 }
 
 function extractTagsFromProperty(property) {
@@ -400,5 +420,29 @@ function getStatusCode(error) {
     return status;
   }
   return 500;
+}
+
+function extractCoverUrl(cover) {
+  if (!cover || typeof cover !== "object") {
+    return undefined;
+  }
+
+  if (cover.type === "external") {
+    return cover.external?.url ?? undefined;
+  }
+
+  if (cover.type === "file") {
+    return cover.file?.url ?? undefined;
+  }
+
+  return undefined;
+}
+
+function normalizePageId(id) {
+  if (typeof id !== "string") {
+    return "";
+  }
+
+  return id.replace(/-/g, "").trim();
 }
 

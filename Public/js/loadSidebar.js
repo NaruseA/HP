@@ -9,7 +9,9 @@ fetch('common/sidebar.html')
     const links = sidebar.querySelectorAll('.nav-link');
     const current = location.pathname.split('/').pop();
     links.forEach(link => {
-      if(link.getAttribute('href') === current) {
+      const href = link.getAttribute('href');
+      const isBlogDetail = current && current.startsWith('blog-detail');
+      if(href === current || (isBlogDetail && href === 'blog.html')) {
         link.classList.add('active');
       }
     });
