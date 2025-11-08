@@ -47,7 +47,10 @@ function renderPost(post) {
 
   renderTags(Array.isArray(post.tags) ? post.tags : []);
   renderCover((post.coverUrl || '').trim(), titleText);
-  renderContent((post.content || '').trim());
+  renderContent({
+    html: (post.contentHtml || '').trim(),
+    plainText: (post.content || '').trim(),
+  });
 
   if (detailContainer) {
     detailContainer.setAttribute('aria-busy', 'false');
@@ -86,21 +89,26 @@ function renderCover(url, titleText) {
   coverWrapper.style.display = 'block';
 }
 
-function renderContent(text) {
+function renderContent({ html, plainText }) {
   if (!contentElement) {
     return;
   }
 
   contentElement.innerHTML = '';
 
-  if (!text) {
+  if (html) {
+    contentElement.innerHTML = html;
+    return;
+  }
+
+  if (!plainText) {
     const placeholder = document.createElement('p');
     placeholder.textContent = '本文は準備中です。';
     contentElement.appendChild(placeholder);
     return;
   }
 
-  const normalized = text.replace(/\r\n/g, '\n');
+  const normalized = plainText.replace(/\r\n/g, '\n');
   const paragraphs = normalized.split(/\n{2,}/).map((paragraph) => paragraph.trim()).filter(Boolean);
 
   if (paragraphs.length === 0) {
