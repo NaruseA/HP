@@ -117,6 +117,16 @@ export default async function handler(req, res) {
         });
       }
 
+      try {
+        matchedPost.contentHtml = await fetchPageContentHtml({
+          pageId: matchedPost.id,
+          notionToken,
+        });
+      } catch (contentError) {
+        console.error("Failed to fetch Notion page content:", contentError);
+        matchedPost.contentHtml = "";
+      }
+
       return res.status(200).json(matchedPost);
     }
 
@@ -257,6 +267,78 @@ async function fetchPagePlainText({ pageId, notionToken }) {
   return collectedText.join("\n\n").trim();
 }
 
+async function fetchPageContentHtml({ pageId, notionToken }) {
+  if (!pageId) {
+    return "";
+  }
+
+  const normalizedId = normalizePageId(pageId);
+  if (!normalizedId) {
+    return "";
+  }
+
+  const blocks = await fetchBlocksRecursively({
+    blockId: normalizedId,
+    notionToken,
+  });
+
+  return blocksToHtml(blocks);
+}
+
+async function fetchBlocksRecursively({ blockId, notionToken, depth = 0 }) {
+  if (!blockId || depth > 10) {
+    return [];
+  }
+
+  const blocks = await fetchBlockChildren({ blockId, notionToken });
+
+  const enriched = await Promise.all(
+    blocks.map(async (block) => {
+      if (!block?.has_children) {
+        return block;
+      }
+
+      const children = await fetchBlocksRecursively({
+        blockId: block.id,
+        notionToken,
+        depth: depth + 1,
+      });
+
+      return { ...block, children };
+    })
+  );
+
+  return enriched;
+}
+
+async function fetchBlockChildren({ blockId, notionToken }) {
+  const blocks = [];
+  let hasMore = true;
+  let startCursor;
+
+  while (hasMore) {
+    const searchParams = new URLSearchParams({ page_size: "100" });
+    if (startCursor) {
+      searchParams.set("start_cursor", startCursor);
+    }
+
+    const response = await notionRequest({
+      path: `/v1/blocks/${blockId}/children?${searchParams.toString()}`,
+      token: notionToken,
+      method: "GET",
+    });
+
+    if (Array.isArray(response?.results)) {
+      blocks.push(...response.results);
+    }
+
+    hasMore = Boolean(response?.has_more);
+    startCursor = response?.next_cursor ?? undefined;
+  }
+
+  return blocks;
+}
+
 function mapPageToPost(page) {
   if (!page || page.object !== "page" || page.archived) {
     return null;
@@ -375,6 +457,283 @@ function extractPlainTextFromBlock(block) {
 
   const richText = block?.[type]?.rich_text;
   return extractPlainTextFromRichText(richText);
+}
+
+function blocksToHtml(blocks) {
+  if (!Array.isArray(blocks) || blocks.length === 0) {
+    return "";
+  }
+
+  const htmlParts = [];
+  let currentListType = null;
+
+  const closeList = () => {
+    if (currentListType) {
+      htmlParts.push(`</${currentListType}>`);
+      currentListType = null;
+    }
+  };
+
+  for (const block of blocks) {
+    if (!block || block.object !== "block") {
+      continue;
+    }
+
+    const type = block.type;
+    if (!type) {
+      continue;
+    }
+
+    if (type === "bulleted_list_item" || type === "numbered_list_item") {
+      const listType = type === "numbered_list_item" ? "ol" : "ul";
+
+      if (currentListType && currentListType !== listType) {
+        closeList();
+      }
+
+      if (!currentListType) {
+        htmlParts.push(`<${listType}>`);
+        currentListType = listType;
+      }
+
+      const listContent = richTextToHtml(block?.[type]?.rich_text);
+      const childrenHtml = blocksToHtml(block?.children ?? []);
+      const nested = childrenHtml ? `\n${childrenHtml}` : "";
+      htmlParts.push(`<li>${listContent}${nested}</li>`);
+      continue;
+    }
+
+    closeList();
+
+    const blockHtml = blockToHtml(block);
+    if (blockHtml) {
+      htmlParts.push(blockHtml);
+    }
+  }
+
+  closeList();
+
+  return htmlParts.join("\n").trim();
+}
+
+function blockToHtml(block) {
+  const type = block.type;
+  const data = block?.[type] || {};
+  const childrenHtml = blocksToHtml(block?.children ?? []);
+
+  switch (type) {
+    case "paragraph": {
+      const content = richTextToHtml(data.rich_text);
+      if (!content && !childrenHtml) {
+        return "";
+      }
+      return wrapWithChildren(`<p>${content || ""}</p>`, childrenHtml);
+    }
+    case "heading_1":
+    case "heading_2":
+    case "heading_3": {
+      const level = type.split("_")[1];
+      const headingTag = `h${level}`;
+      const content = richTextToHtml(data.rich_text);
+      if (!content) {
+        return "";
+      }
+      return wrapWithChildren(`<${headingTag}>${content}</${headingTag}>`, childrenHtml);
+    }
+    case "quote": {
+      const content = richTextToHtml(data.rich_text);
+      if (!content && !childrenHtml) {
+        return "";
+      }
+      return wrapWithChildren(`<blockquote>${content || ""}</blockquote>`, childrenHtml);
+    }
+    case "callout": {
+      const content = richTextToHtml(data.rich_text);
+      const icon = extractCalloutIcon(data.icon);
+      const inner = `${icon ? `<span class="notion-callout-icon">${icon}</span>` : ""}<div class="notion-callout-text">${content || ""}</div>`;
+      return wrapWithChildren(`<div class="notion-callout">${inner}</div>`, childrenHtml);
+    }
+    case "code": {
+      const language = (data.language || "").toLowerCase();
+      const codeText = Array.isArray(data.rich_text)
+        ? data.rich_text.map((fragment) => fragment?.plain_text || "").join("")
+        : "";
+      const escaped = escapeHtml(codeText);
+      const languageClass = language ? ` class="language-${escapeAttribute(language)}"` : "";
+      return `<pre><code${languageClass}>${escaped}</code></pre>`;
+    }
+    case "image": {
+      const url = extractFileUrl(data);
+      if (!url) {
+        return "";
+      }
+      const caption = richTextToHtml(data.caption);
+      const alt = caption ? escapeAttribute(stripHtml(caption)) : "Notion image";
+      const figureCaption = caption ? `<figcaption>${caption}</figcaption>` : "";
+      return `<figure><img src="${escapeAttribute(url)}" alt="${alt}" />${figureCaption}</figure>`;
+    }
+    case "divider":
+      return "<hr />";
+    case "to_do": {
+      const content = richTextToHtml(data.rich_text);
+      const checked = data.checked ? " checked" : "";
+      const checkbox = `<label class="notion-todo"><input type="checkbox" disabled${checked} /> <span>${content}</span></label>`;
+      return wrapWithChildren(`<div class="notion-todo-item">${checkbox}</div>`, childrenHtml);
+    }
+    case "toggle": {
+      const summary = richTextToHtml(data.rich_text);
+      return `<details><summary>${summary}</summary>${childrenHtml}</details>`;
+    }
+    default: {
+      const content = richTextToHtml(data.rich_text);
+      if (!content && !childrenHtml) {
+        return "";
+      }
+      return wrapWithChildren(`<div>${content || ""}</div>`, childrenHtml);
+    }
+  }
+}
+
+function wrapWithChildren(html, childrenHtml) {
+  if (!childrenHtml) {
+    return html;
+  }
+  return `${html}\n${childrenHtml}`;
+}
+
+function extractCalloutIcon(icon) {
+  if (!icon) {
+    return "";
+  }
+
+  if (typeof icon === "string") {
+    return escapeHtml(icon);
+  }
+
+  if (icon.type === "emoji") {
+    return escapeHtml(icon.emoji || "");
+  }
+
+  if (icon.type === "external") {
+    const url = icon.external?.url;
+    if (url) {
+      return `<img src="${escapeAttribute(url)}" alt="" />`;
+    }
+  }
+
+  if (icon.type === "file") {
+    const url = icon.file?.url;
+    if (url) {
+      return `<img src="${escapeAttribute(url)}" alt="" />`;
+    }
+  }
+
+  return "";
+}
+
+function extractFileUrl(data) {
+  if (!data || typeof data !== "object") {
+    return "";
+  }
+
+  if (data.type === "external") {
+    return data.external?.url || "";
+  }
+
+  if (data.type === "file") {
+    return data.file?.url || "";
+  }
+
+  return "";
+}
+
+function richTextToHtml(fragments) {
+  if (!Array.isArray(fragments)) {
+    return "";
+  }
+
+  return fragments
+    .map((fragment) => {
+      if (!fragment) {
+        return "";
+      }
+
+      const annotations = fragment.annotations || {};
+      const href = fragment.href;
+      const plain = fragment.plain_text || "";
+      let content = escapeHtml(plain);
+
+      if (annotations.code) {
+        content = `<code>${content}</code>`;
+      }
+      if (annotations.bold) {
+        content = `<strong>${content}</strong>`;
+      }
+      if (annotations.italic) {
+        content = `<em>${content}</em>`;
+      }
+      if (annotations.strikethrough) {
+        content = `<s>${content}</s>`;
+      }
+      if (annotations.underline) {
+        content = `<u>${content}</u>`;
+      }
+      if (annotations.color && annotations.color !== "default") {
+        content = applyColorAnnotation(content, annotations.color);
+      }
+
+      if (href) {
+        const escapedHref = escapeAttribute(href);
+        content = `<a href="${escapedHref}" target="_blank" rel="noopener noreferrer">${content}</a>`;
+      }
+
+      return content;
+    })
+    .join("");
+}
+
+function applyColorAnnotation(content, color) {
+  if (!color || color === "default") {
+    return content;
+  }
+
+  const colorMap = {
+    gray: "#9B9A97",
+    brown: "#64473A",
+    orange: "#D9730D",
+    yellow: "#DFAB01",
+    green: "#0F7B6C",
+    blue: "#0B6E99",
+    purple: "#6940A5",
+    pink: "#AD1A72",
+    red: "#E03E3E",
+  };
+
+  if (color.endsWith("_background")) {
+    const baseColor = color.replace("_background", "");
+    const backgroundColor = colorMap[baseColor] || baseColor;
+    return `<span style="background-color:${escapeAttribute(backgroundColor)};">${content}</span>`;
+  }
+
+  const foregroundColor = colorMap[color] || color;
+  return `<span style="color:${escapeAttribute(foregroundColor)};">${content}</span>`;
+}
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value).replace(/`/g, "&#96;");
+}
+
+function stripHtml(value) {
+  return String(value || "").replace(/<[^>]+>/g, "");
 }
 
 function extractTagsFromProperty(property) {
