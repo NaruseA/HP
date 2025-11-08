@@ -41,25 +41,55 @@ function renderPosts(posts) {
   }
 
   posts.forEach((post) => {
-    const article = document.createElement('article');
-    article.className = 'blog-card';
+    if (!post || !post.id) {
+      return;
+    }
+
+    const link = document.createElement('a');
+    link.className = 'blog-item';
+    link.href = `blog-detail.html?id=${encodeURIComponent(post.id)}`;
+    const titleText = post?.title?.trim() || 'Untitled';
+    link.setAttribute('aria-label', `${titleText}の記事詳細を読む`);
+
+    const thumbnail = document.createElement('div');
+    thumbnail.className = 'blog-thumbnail';
+
+    const coverUrl = (post?.coverUrl || '').trim();
+    if (coverUrl) {
+      const img = document.createElement('img');
+      img.src = coverUrl;
+      img.alt = `${titleText}のサムネイル画像`;
+      thumbnail.appendChild(img);
+    } else {
+      thumbnail.classList.add('is-placeholder');
+      const placeholder = document.createElement('span');
+      placeholder.textContent = '画像なし';
+      thumbnail.appendChild(placeholder);
+    }
+
+    const info = document.createElement('div');
+    info.className = 'blog-info';
 
     const title = document.createElement('h3');
-    title.textContent = post?.title?.trim() || 'Untitled';
-    article.appendChild(title);
+    title.textContent = titleText;
+    info.appendChild(title);
 
     const excerpt = document.createElement('p');
+    excerpt.className = 'blog-excerpt';
     const plainText = (post?.content || '').trim();
     excerpt.textContent = plainText ? truncateText(plainText, 160) : '本文は準備中です。';
-    article.appendChild(excerpt);
+    info.appendChild(excerpt);
 
     const meta = document.createElement('p');
     meta.className = 'blog-meta';
     const tags = Array.isArray(post?.tags) && post.tags.length > 0 ? `#${post.tags.join(' / #')}` : 'タグ未設定';
     meta.textContent = tags;
-    article.appendChild(meta);
+    info.appendChild(meta);
 
-    postsContainer.appendChild(article);
+    link.appendChild(thumbnail);
+    link.appendChild(info);
+
+    postsContainer.appendChild(link);
   });
 }
 
