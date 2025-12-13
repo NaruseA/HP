@@ -364,13 +364,15 @@ function mapPageToPost(page) {
   );
 
   const title = extractPlainTextFromProperty(titleProperty) || "Untitled";
-  const content = extractPlainTextFromProperty(contentProperty);
+  const subtitle = extractPlainTextFromProperty(contentProperty);
+  const content = subtitle;
   const tags = extractTagsFromProperty(tagProperty);
   const coverUrl = extractCoverUrl(page.cover);
 
   return {
     id: page.id,
     title,
+    subtitle: subtitle || "",
     content: content || "",
     tags,
     coverUrl,

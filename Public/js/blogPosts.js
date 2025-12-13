@@ -74,11 +74,13 @@ function renderPosts(posts) {
     title.textContent = titleText;
     info.appendChild(title);
 
-    const excerpt = document.createElement('p');
-    excerpt.className = 'blog-excerpt';
-    const plainText = (post?.content || '').trim();
-    excerpt.textContent = plainText ? truncateText(plainText, 160) : '本文は準備中です。';
-    info.appendChild(excerpt);
+    const subtitle = (post?.subtitle || '').trim();
+    if (subtitle) {
+      const excerpt = document.createElement('p');
+      excerpt.className = 'blog-excerpt';
+      excerpt.textContent = truncateText(subtitle, 160);
+      info.appendChild(excerpt);
+    }
 
     const meta = document.createElement('p');
     meta.className = 'blog-meta';
