@@ -7,49 +7,21 @@
 </head>
 <body>
   <div class="layout">
-    <nav id="sidebar" style="display:none;"></nav>
-
     <main class="content">
       <section class="page-hero">
-        <h1>Home</h1>
-        <p>デザインとものづくりで日々の暮らしにちょっとした驚きと彩りを届けるNadoのポートフォリオサイトです。</p>
+        <h1>Nado</h1>
+        <p>作品紹介や制作日誌など</p>
       </section>
 
       <section class="page-section">
-        <h2>最新の活動</h2>
-        <ul class="feature-list">
-          <li>
-            <h3>Works</h3>
-            <p>最近制作したイラストやグッズ、パッケージデザインのハイライトを紹介しています。</p>
-            <a href="works.html" class="button-link">作品を見る</a>
-          </li>
-          <li>
-            <h3>Blog</h3>
-            <p>制作の裏側やイベント出展レポート、日々の学びを綴ったダイアリーをまとめています。</p>
-            <a href="blog.html" class="button-link">記事を読む</a>
-          </li>
-          <li>
-            <h3>About</h3>
-            <p>Nadoについてのプロフィールや活動の背景、得意領域を掲載しています。</p>
-            <a href="about.html" class="button-link">プロフィールを見る</a>
-          </li>
-        </ul>
+        <h2>最近の投稿</h2>
+        <div class="blog-list" id="blog-posts"></div>
+        <p id="blog-empty" class="empty-message" style="display:none;">Notionから記事を取得できませんでした</p>
       </section>
 
-      <section class="page-section">
-        <h2>お知らせ</h2>
-        <div class="info-card">
-          <p class="info-date">2024.02.14</p>
-          <p>オンラインストアにて新作アクリルキーホルダーの予約受付を開始しました。数量限定につきお早めにどうぞ。</p>
-        </div>
-        <div class="info-card">
-          <p class="info-date">2024.01.28</p>
-          <p>クリエイターイベント「Design Festa」へ出展しました。会場で配布した冊子はダウンロード版を準備中です。</p>
-        </div>
-      </section>
     </main>
   </div>
-  <script src="js/loadSidebar.js"></script>
 
+  <script type="module" src="js/blogPosts.js"></script>
 </body>
 </html>

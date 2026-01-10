@@ -1,2 +1,7 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# すべてのテキストファイルはLFに統一
+* text=auto eol=lf
+
+# Windows用スクリプトはCRLF（必要な場合だけ）
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
